@@ -35,40 +35,12 @@ public class SecurityConfiguration extends WebSecurityConfigurerAdapter {
         auth.userDetailsService(hobbieUserDetailsService);
     }
 
-//    @Override
-//    public void configure(final WebSecurity webSecurity) {
-//        webSecurity.ignoring().antMatchers(
-//                "/v3/api-docs/**",
-//                "/swagger-ui/**",
-//                "/swagger-ui/index.html");
-//    }
-
-
 
     @Override
     @Bean
     public AuthenticationManager authenticationManagerBean() throws Exception {
         return super.authenticationManagerBean();
     }
-
-//    @Override
-//    protected void configure(HttpSecurity http) throws Exception {
-//        http.cors();
-//        http.csrf()
-//                .disable()
-//                .authorizeRequests()
-//                .antMatchers("/register", "/signup", "/authenticate", "/notification", "/password", "/swagger-ui/index.html", "/v3/api-docs", "/configuration/ui", "/swagger-resources/**",
-//                        "/configuration/security", "/swagger-ui/*", "/webjars/**", "/v3/**")
-//                .permitAll()
-//                .anyRequest()
-//                .authenticated()
-//                .and()
-//                .sessionManagement()
-//                .sessionCreationPolicy(SessionCreationPolicy.STATELESS);
-//        http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
-//
-//    }
-
 
     @Override
     protected void configure(HttpSecurity http) throws Exception {
