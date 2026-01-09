@@ -16,7 +16,7 @@
     <description>Project for Spring Boot</description>
     <properties>
         <java.version>11</java.version>
-        <sonar.projectKey>HamzaRomdhani_fullstack-spring-boot-and-react-</sonar.projectKey>
+        <sonar.projectKey>HamzaRomdhani_fullstack-spring-boot-and-react</sonar.projectKey>
         <sonar.organization>hamzaromdhani</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
     </properties>
