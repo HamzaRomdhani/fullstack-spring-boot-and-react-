@@ -16,7 +16,6 @@
     "core-js": "^3.22.0",
     "formik": "^2.2.9",
     "jest-mock-axios": "^4.5.0",
-    "npm": "^8.7.0",
     "react": "^17.0.2",
     "react-confirm-alert": "^2.7.0",
     "react-dom": "^17.0.2",
@@ -32,9 +31,17 @@
   },
   "scripts": {
     "start": "PORT=4200 react-scripts start",
-    "build": "cross-env NODE_ENV=production webpack --config build/webpack.config.js",
+    "build": "react-scripts build",
     "test": "react-scripts test --transformIgnorePatterns 'node_modules/(?!(jest-)?(@ionic/react|@ionic/react-router|@ionic/core|@stencil/core|ionicons|react-confirm-alert)/)'",
     "eject": "react-scripts eject"
+  },
+  "resolutions": {
+    "ajv": "6.12.6",
+    "ajv-keywords": "3.5.2"
+  },
+  "overrides": {
+    "ajv": "6.12.6",
+    "ajv-keywords": "3.5.2"
   },
   "eslintConfig": {
     "extends": [
@@ -58,8 +65,6 @@
     "@babel/preset-env": "^7.16.11",
     "@types/jsdom": "^11.12.0",
     "axios-mock-adapter": "^1.20.0",
-    "cross-env": "^7.0.3",
-    "webpack": "^5.90.0",
-    "webpack-cli": "^5.1.4"
+    "cross-env": "^7.0.3"
   }
 }
