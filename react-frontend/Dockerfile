@@ -5,7 +5,8 @@ LABEL authors="hamza-jaa"
 WORKDIR /app
 # copy package files first for caching
 COPY package*.json ./
-RUN npm ci --silent
+#RUN npm ci --silent
+RUN npm ci --legacy-peer-deps --silent
 COPY . .
 # build script from your package.json (uses webpack)
 RUN npm run build
