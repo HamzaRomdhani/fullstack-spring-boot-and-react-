@@ -1,0 +1,12 @@
+# node / maven artifacts
+node_modules
+**/node_modules
+target
+/build
+dist
+.DS_Store
+*.log
+.idea
+.vscode
+.env
+*.iml
