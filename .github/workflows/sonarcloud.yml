@@ -2,36 +2,18 @@ name: SonarCloud Analysis
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ main, master ]
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
   Analysis:
     runs-on: ubuntu-latest
-    # ADD THIS: Service container to run Postgres for tests
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: hobbie_backend_db # Matches your docker-compose default
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Important for Sonar analysis
+          fetch-depth: 0
 
       - name: Set up JDK 11
         uses: actions/setup-java@v4
@@ -40,16 +22,10 @@ jobs:
           java-version: '11'
           cache: 'maven'
 
-      # MODIFIED THIS: Added env vars to connect to the service container
+      # Cleaned up command - just Maven
       - name: Build & test (maven) - generate JaCoCo XML
         working-directory: ./spring-backend
         run: mvn -B clean verify
-        env:
-          # We point to 'postgres' (the service name) instead of localhost
-          SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hobbie_backend_db
-          SPRING_DATASOURCE_USERNAME: postgres
-          SPRING_DATASOURCE_PASSWORD: postgres
-          SPRING_JPA_HIBERNATE_DDL_AUTO: create-drop # Re-create schema for tests
 
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarcloud-github-action@master
