@@ -12,7 +12,7 @@ it("footer renders without crashing", () => {
     </Router>
   );
   expect(
-    screen.getByText(/Hobbie 2022. All rights reserved./i)
+    screen.getByText(/Hobbie 2026. All rights reserved./i)
   ).toBeInTheDocument();
 });
 

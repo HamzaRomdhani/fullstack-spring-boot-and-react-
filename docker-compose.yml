@@ -23,7 +23,7 @@ services:
     build:
       context: ./spring-backend
       dockerfile: Dockerfile
-    image: hobbie-backend:latest
+    image: hamzaromdhani/hobbie-backend:latest
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME:-hobbie_backend_db}
@@ -50,7 +50,7 @@ services:
     build:
       context: ./react-frontend
       dockerfile: Dockerfile
-    image: hobbie-frontend:latest
+    image: hamzaromdhani/hobbie-frontend:latest
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-80}:80"
