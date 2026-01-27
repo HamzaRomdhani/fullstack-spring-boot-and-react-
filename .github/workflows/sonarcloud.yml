@@ -25,7 +25,8 @@ jobs:
       # Cleaned up command - just Maven
       - name: Build & test (maven) - generate JaCoCo XML
         working-directory: ./spring-backend
-        run: mvn -B clean verify
+        # We FORCE H2 here so it overrides any Postgres config in application.yml
+        run: mvn -B clean verify -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
 
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarcloud-github-action@master
