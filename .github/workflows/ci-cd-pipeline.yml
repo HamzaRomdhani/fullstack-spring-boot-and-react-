@@ -87,7 +87,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react-
+            -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
             # CRITICAL FIX: Added all explicit properties to solve "contains .java files" error
