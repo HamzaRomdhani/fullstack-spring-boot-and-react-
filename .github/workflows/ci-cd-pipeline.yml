@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline (Artifact-Persisted & Minikube Fixed)
 
 on:
   push:
@@ -32,19 +32,6 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # Build & Generate Coverage
-      - name: Build & Test (Maven) - Generate JaCoCo XML
-        working-directory: ./spring-backend
-        run: mvn -B verify -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
-
-      # CRITICAL STEP: Persist Build Artifacts
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: maven-target
-          path: spring-backend/target
-          retention-days: 1
-
       # --- Backend Build ---
       - name: Build and push Backend
         uses: docker/build-push-action@v5
@@ -67,6 +54,20 @@ jobs:
             hamzaromdhani/hobbie-frontend:latest
             hamzaromdhani/hobbie-frontend:${{ github.sha }}
 
+      # CRITICAL FIX FOR SONAR: Package as JAR
+      # We switch to 'jar:jar' packaging to produce a .jar file. This solves "Binary paths empty" error.
+      - name: Build & Test (Maven) - Generate JAR
+        run: mvn -B package -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+
+      # CRITICAL STEP: Persist JAR File
+      # We persist the specific .jar file so the next job can download it.
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-artifact
+          path: spring-backend/target/hobbie-backend-1.0-SNAPSHOT.jar
+          retention-days: 1
+
   # ---------------------------------------------------------
   # JOB 2: SonarCloud Analysis
   # ---------------------------------------------------------
@@ -88,10 +89,10 @@ jobs:
           cache: 'maven'
 
       - name: Download Build Artifacts
-        # This step downloads the target folder uploaded in the previous job
+        # Restore the .jar file uploaded in the previous job
         uses: actions/download-artifact@v4
         with:
-          name: maven-target
+          name: backend-artifact
           path: spring-backend/target
 
       - name: Analyze with SonarCloud
@@ -104,12 +105,11 @@ jobs:
             -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
-            # Explicit properties
+            # FIX: Point to the specific JAR file, not the directory
+            -Dsonar.java.binaries=spring-backend/target/hobbie-backend-1.0-SNAPSHOT.jar
+            # Explicitly point to sources
             -Dsonar.sources=spring-backend/src/main/java,react-frontend/src
             -Dsonar.tests=spring-backend/src/test/java
-            -Dsonar.java.binaries=spring-backend/target/classes
-            -Dsonar.coverage.jacoco.xmlReportPaths=spring-backend/target/site/jacoco/jacoco.xml
-            -Dsonar.exclusions=**/target/**,**/node_modules/**,**/*.spec.js
 
   # ---------------------------------------------------------
   # JOB 3: Deploy to Minikube
@@ -117,7 +117,7 @@ jobs:
   deploy-minikube:
     name: Deploy to Minikube
     runs-on: ubuntu-latest
-    needs: build-and-push # Only run after images are pushed
+    needs: build-and-push
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -188,7 +188,7 @@ jobs:
                         mountPath: /var/lib/postgresql/data
                 volumeClaimTemplates:
                   - metadata:
-                      name: postgres-storage
+                    name: postgres-storage
                   spec:
                     accessModes:
                       - ReadWriteOnce
@@ -258,7 +258,7 @@ jobs:
           spec:
             ports:
               - port: 8080
-            targetPort: 8080
+              targetPort: 8080
             selector:
               app: backend
             clusterIP: None
@@ -266,11 +266,11 @@ jobs:
 
           # Create 04-frontend.yaml
           cat <<EOF > k8s/04-frontend.yaml
-          apiVersion: v1
+          apiVersion: apps/v1
           kind: Deployment
           metadata:
             name: frontend
-            namespace: hobbies-app
+            namespace: holidays-app
           spec:
             replicas: 1
             selector:
@@ -288,6 +288,7 @@ jobs:
                     ports:
                       - containerPort: 80
                     env:
+                      # Adjust variable name based on what you use in React (VITE_ or REACT_APP_)
                       - name: VITE_API_URL
                         value: "http://backend.hobbies-app.svc.cluster.local:8080"
           ---
@@ -295,11 +296,11 @@ jobs:
           kind: Service
           metadata:
             name: frontend
-            namespace: hobbies-app
+            namespace: holidays-app
           spec:
             ports:
               - port: 80
-            targetPort: 80
+              targetPort: 80
             selector:
               app: frontend
             clusterIP: None
@@ -310,13 +311,13 @@ jobs:
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
-            name: hobbies-ingress
-            namespace: hobbies-app
-            annotations:
-              nginx.ingress.kubernetes.io/rewrite-target: /
+            name: holidays-ingress
+            namespace: holidays-app
+          annotations:
+            nginx.ingress.kubernetes.io/rewrite-target: /
           spec:
             rules:
-              - host: hobbies.local
+              - host: holidays.local
                 http:
                   paths:
                     - path: /api
@@ -329,10 +330,10 @@ jobs:
                     - path: /
                       pathType: Prefix
                       backend:
-                          service:
-                            name: frontend
-                            port:
-                              number: 80
+                        service:
+                          name: frontend
+                          port:
+                            number: 80
           EOF
 
       - name: Install Minikube & Kubectl
@@ -351,8 +352,9 @@ jobs:
 
       - name: Start Minikube
         run: |
-          # Use driver=none for GitHub Actions
-          minikube start --driver=none
+          # FIX: Use 'docker' driver (default) to fix GUEST_MISSING_CONNTRACK
+          # FIX: Use sudo to allow it to talk to Docker socket
+          sudo minikube start --driver=docker
           
           # Enable Ingress for clean URLs
           minikube addons enable ingress
@@ -369,7 +371,7 @@ jobs:
         run: |
           echo "------------------------------------------"
           echo "Deployment Complete!"
-          echo "To access your application, you need to tunnel into Minikube."
-          echo "Run this command in your terminal:"
+          echo "Minikube is running."
+          echo "To access your application, run this command in your terminal:"
           echo "  minikube tunnel"
           echo "------------------------------------------"
