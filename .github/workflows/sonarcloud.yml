@@ -1,4 +1,4 @@
-name: SonarCloud Analysis + Deploy to Minikube
+name: SonarCloud Analysis
 
 on:
   push:
