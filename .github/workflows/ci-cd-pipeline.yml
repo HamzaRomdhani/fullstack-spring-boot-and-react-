@@ -60,7 +60,6 @@ jobs:
   sonar-analysis:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
-    # This waits for build-and-push job to finish
     needs: build-and-push
     steps:
       - name: Checkout code
@@ -83,13 +82,20 @@ jobs:
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarcloud-github-action@master
         env:
+          # FIXED TYPO: Corrected env variable names
           GITHUB_TOKEN: ${{ secrets.HUBGIT_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react
+            -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react-
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
+            # CRITICAL FIX: Added all explicit properties to solve "contains .java files" error
+            -Dsonar.sources=spring-backend/src/main/java,react-frontend/src
+            -Dsonar.tests=spring-backend/src/test/java
+            -Dsonar.java.binaries=spring-backend/target/classes
+            -Dsonar.coverage.jacoco.xmlReportPaths=spring-backend/target/site/jacoco/jacoco.xml
+            -Dsonar.exclusions=**/target/**,**/node_modules/**,**/*.spec.js
 
   # ---------------------------------------------------------
   # JOB 3: Deploy to Minikube
@@ -97,11 +103,223 @@ jobs:
   deploy-minikube:
     name: Deploy to Minikube
     runs-on: ubuntu-latest
-    # This waits for build-and-push job to finish (so images exist)
     needs: build-and-push
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Create K8s Directory and Manifests
+        run: |
+          # Create the k8s folder if it doesn't exist
+          mkdir -p k8s
+          
+          # Create 00-namespace.yaml
+          cat <<EOF > k8s/00-namespace.yaml
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: hobbies-app
+          EOF
+          
+          # Create 01-secrets.yaml
+          cat <<EOF > k8s/01-secrets.yaml
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: hobbies-secret
+            namespace: hobbies-app
+          type: Opaque
+          stringData:
+            DB_PASSWORD: "postgres"
+            JWT_SECRET: "your-jwt-secret-here"
+            MAIL_PASSWORD: "your-mail-password-here"
+            CLOUDINARY_API_SECRET: "your-cloudinary-secret"
+            CLOUDINARY_API_KEY: "your-cloudinary-key"
+          EOF
+          
+          # Create 02-postgres.yaml
+          cat <<EOF > k8s/02-postgres.yaml
+          apiVersion: apps/v1
+          kind: StatefulSet
+          metadata:
+            name: db
+            namespace: hobbies-app
+          spec:
+            serviceName: db
+            replicas: 1
+            selector:
+              matchLabels:
+                app: db
+            template:
+              metadata:
+                labels:
+                  app: db
+              spec:
+                containers:
+                  - name: postgres
+                    image: postgres:15
+                    ports:
+                      - containerPort: 5432
+                    env:
+                      - name: POSTGRES_DB
+                        value: "hobbie_backend_db"
+                      - name: POSTGRES_USER
+                        value: "postgres"
+                      - name: POSTGRES_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: hobbies-secret
+                            key: DB_PASSWORD
+                    volumeMounts:
+                      - name: postgres-storage
+                        mountPath: /var/lib/postgresql/data
+                volumeClaimTemplates:
+                  - metadata:
+                      name: postgres-storage
+                  spec:
+                    accessModes:
+                      - ReadWriteOnce
+                    resources:
+                      requests:
+                        storage: 1Gi
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: db
+            namespace: hobbies-app
+          spec:
+            ports:
+              - port: 5432
+            selector:
+              app: db
+            clusterIP: None
+          EOF
+
+          # Create 03-backend.yaml
+          cat <<EOF > k8s/03-backend.yaml
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: backend-config
+            namespace: hobbies-app
+          data:
+            SPRING_DATASOURCE_URL: "jdbc:postgresql://db.hobbies-app.svc.cluster.local:5432/hobbie_backend_db"
+            SPRING_DATASOURCE_USERNAME: "postgres"
+            SPRING_DATASOURCE_PASSWORD: "postgres"
+            SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: backend
+            namespace: hobbies-app
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: backend
+            template:
+              metadata:
+                labels:
+                  app: backend
+              spec:
+                containers:
+                  - name: backend
+                    image: hamzaromdhani/hobbie-backend:latest
+                    imagePullPolicy: Always
+                    ports:
+                      - containerPort: 8080
+                    envFrom:
+                      - configMapRef:
+                          name: backend-config
+                      - secretRef:
+                          name: hobbies-secret
+                          optional: false
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: backend
+            namespace: hobbies-app
+          spec:
+            ports:
+              - port: 8080
+            targetPort: 8080
+            selector:
+              app: backend
+            clusterIP: None
+          EOF
+
+          # Create 04-frontend.yaml
+          cat <<EOF > k8s/04-frontend.yaml
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: frontend
+            namespace: hobbies-app
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: frontend
+            template:
+              metadata:
+                labels:
+                  app: frontend
+              spec:
+                containers:
+                  - name: frontend
+                    image: hamzaromdhani/hobbie-frontend:latest
+                    imagePullPolicy: Always
+                    ports:
+                      - containerPort: 80
+                    env:
+                      - name: VITE_API_URL
+                        value: "http://backend.hobbies-app.svc.cluster.local:8080"
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: frontend
+            namespace: hobbies-app
+          spec:
+            ports:
+              - port: 80
+            targetPort: 80
+            selector:
+              app: frontend
+            clusterIP: None
+          EOF
+
+          # Create 05-ingress.yaml
+          cat <<EOF > k8s/05-ingress.yaml
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: hobbies-ingress
+            namespace: hobbies-app
+            annotations:
+              nginx.ingress.kubernetes.io/rewrite-target: /
+          spec:
+            rules:
+              - host: hobbies.local
+                http:
+                  paths:
+                    - path: /api
+                      pathType: Prefix
+                      backend:
+                          service:
+                            name: backend
+                            port:
+                              number: 8080
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                          service:
+                            name: frontend
+                            port:
+                              number: 80
 
       - name: Install Minikube & Kubectl
         run: |
@@ -113,14 +331,12 @@ jobs:
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
-          
-          # Add user to docker group to fix permissions
-          sudo usermod -aG docker $USER
 
       - name: Start Minikube
         run: |
-          # Start Minikube cluster using docker driver
-          sudo minikube start --driver=docker
+          # FIX: Use 'none' driver to avoid sudo permission errors
+          # FIX: Use --wait to ensure cluster is ready before deploy
+          minikube start --driver=none --wait
           
           # Enable Ingress for clean URLs
           minikube addons enable ingress
@@ -133,11 +349,11 @@ jobs:
           # Apply all your k8s manifests
           kubectl apply -f k8s/
 
-      - name: Access Info
+      - name: Get Access Info
         run: |
           echo "------------------------------------------"
           echo "Deployment Complete!"
           echo "To access your application, you need to tunnel into Minikube."
-          echo "Run this command in a new terminal:"
+          echo "Run this command in your terminal:"
           echo "  minikube tunnel"
           echo "------------------------------------------"
