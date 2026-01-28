@@ -1,4 +1,4 @@
-name: SonarCloud Analysis
+name: CI/CD Pipeline
 
 on:
   push:
@@ -7,10 +7,63 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  Analysis:
+  # ---------------------------------------------------------
+  # JOB 1: Build & Push Docker Images
+  # ---------------------------------------------------------
+  build-and-push:
+    name: Build and Push Docker Images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Checkout
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # --- Backend Build ---
+      - name: Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./spring-backend
+          file: ./spring-backend/Dockerfile
+          push: true
+          tags: |
+            hamzaromdhani/hobbie-backend:latest
+            hamzaromdhani/hobbie-backend:${{ github.sha }}
+
+      # --- Frontend Build ---
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./react-frontend
+          file: ./react-frontend/Dockerfile
+          push: true
+          tags: |
+            hamzaromdhani/hobbie-frontend:latest
+            hamzaromdhani/hobbie-frontend:${{ github.sha }}
+
+  # ---------------------------------------------------------
+  # JOB 2: SonarCloud Analysis
+  # ---------------------------------------------------------
+  sonar-analysis:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    # This waits for build-and-push job to finish
+    needs: build-and-push
+    steps:
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Important for Sonar history
@@ -22,9 +75,9 @@ jobs:
           java-version: '11'
           cache: 'maven'
 
-      - name: Build & test (maven) - generate JaCoCo XML
+      - name: Build & test (Maven) - generate JaCoCo XML
         working-directory: ./spring-backend
-        # We force H2 via command line to ensure it works in CI
+        # Force H2 for CI
         run: mvn -B clean verify -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
 
       - name: Analyze with SonarCloud
@@ -38,11 +91,13 @@ jobs:
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
 
-  # NEW JOB: Deploy to Minikube
-  deploy-to-minikube:
+  # ---------------------------------------------------------
+  # JOB 3: Deploy to Minikube
+  # ---------------------------------------------------------
+  deploy-minikube:
     name: Deploy to Minikube
     runs-on: ubuntu-latest
-    # This ensures this job waits for the Docker build in the OTHER workflow to finish
+    # This waits for build-and-push job to finish (so images exist)
     needs: build-and-push
     steps:
       - name: Checkout code
@@ -53,16 +108,20 @@ jobs:
           # Download Minikube
           curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
-
+          
           # Download Kubectl
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
+          
+          # Add user to docker group to fix permissions
+          sudo usermod -aG docker $USER
 
       - name: Start Minikube
         run: |
           # Start Minikube cluster using docker driver
           sudo minikube start --driver=docker
+          
           # Enable Ingress for clean URLs
           minikube addons enable ingress
 
@@ -70,11 +129,11 @@ jobs:
         run: |
           # Wait for nodes to be ready
           kubectl wait --for=condition=ready node --timeout=120s
-
-          # Apply all your k8s manifests (assuming you created k8s/ folder)
+          
+          # Apply all your k8s manifests
           kubectl apply -f k8s/
 
-      - name: Get Access Info
+      - name: Access Info
         run: |
           echo "------------------------------------------"
           echo "Deployment Complete!"
