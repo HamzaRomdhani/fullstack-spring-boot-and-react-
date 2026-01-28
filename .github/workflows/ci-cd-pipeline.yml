@@ -1,4 +1,4 @@
-name: CI/CD Pipeline (Artifact-Persisted & Minikube Fixed)
+name: CI/CD Pipeline
 
 on:
   push:
@@ -23,14 +23,10 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build & Test (Maven) - Generate JAR
+        # We use 'package' to build the JAR for Docker Hub (required) and artifacts.
+        working-directory: ./spring-backend
+        run: mvn -B package -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
 
       # --- Backend Build ---
       - name: Build and push Backend
@@ -54,46 +50,24 @@ jobs:
             hamzaromdhani/hobbie-frontend:latest
             hamzaromdhani/hobbie-frontend:${{ github.sha }}
 
-      # CRITICAL FIX FOR SONAR: Package as JAR
-      # We switch to 'jar:jar' packaging to produce a .jar file. This solves "Binary paths empty" error.
-      - name: Build & Test (Maven) - Generate JAR
-        run: mvn -B package -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
-
-      # CRITICAL STEP: Persist JAR File
-      # We persist the specific .jar file so the next job can download it.
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-artifact
-          path: spring-backend/target/hobbie-backend-1.0-SNAPSHOT.jar
-          retention-days: 1
-
   # ---------------------------------------------------------
   # JOB 2: SonarCloud Analysis
   # ---------------------------------------------------------
   sonar-analysis:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
+    # Waits for build-and-push to complete
     needs: build-and-push
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up JDK 11
-        uses: actions/setup-java@v4
+        uses: actions/ actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '11'
           cache: 'maven'
-
-      - name: Download Build Artifacts
-        # Restore the .jar file uploaded in the previous job
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-artifact
-          path: spring-backend/target
 
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarcloud-github-action@master
@@ -105,11 +79,11 @@ jobs:
             -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
-            # FIX: Point to the specific JAR file, not the directory
-            -Dsonar.java.binaries=spring-backend/target/hobbie-backend-1.0-SNAPSHOT.jar
-            # Explicitly point to sources
             -Dsonar.sources=spring-backend/src/main/java,react-frontend/src
             -Dsonar.tests=spring-backend/src/test/java
+            -Dsonar.java.binaries=spring-backend/target/hobbie-backend-1.0.0-SNAPSHOT.jar
+            -Dsonar.coverage.jacoco.xmlReportPaths=spring-backend/target/site/jacoco/jacoco.xml
+            -Dsonar.exclusions=**/target/**,**/node_modules/**,**/*.spec.js
 
   # ---------------------------------------------------------
   # JOB 3: Deploy to Minikube
@@ -140,7 +114,7 @@ jobs:
           kind: Secret
           metadata:
             name: hobbies-secret
-            namespace: hobbies-app
+            namespace: holidays-app
           type: Opaque
           stringData:
             DB_PASSWORD: "postgres"
@@ -156,7 +130,7 @@ jobs:
           kind: StatefulSet
           metadata:
             name: db
-            namespace: hobbies-app
+            namespace: holidays-app
           spec:
             serviceName: db
             replicas: 1
@@ -188,7 +162,7 @@ jobs:
                         mountPath: /var/lib/postgresql/data
                 volumeClaimTemplates:
                   - metadata:
-                    name: postgres-storage
+                      name: postgres-storage
                   spec:
                     accessModes:
                       - ReadWriteOnce
@@ -200,7 +174,7 @@ jobs:
           kind: Service
           metadata:
             name: db
-            namespace: hobbies-app
+            namespace: holidays-app
           spec:
             ports:
               - port: 5432
@@ -215,9 +189,9 @@ jobs:
           kind: ConfigMap
           metadata:
             name: backend-config
-            namespace: hobbies-app
+            namespace: holidays-app
           data:
-            SPRING_DATASOURCE_URL: "jdbc:postgresql://db.hobbies-app.svc.cluster.local:5432/hobbie_backend_db"
+            SPRING_DATASOURCE_URL: "jdbc:postgresql://db.holidays-app.svc.cluster.local:5432/hobbie_backend_db"
             SPRING_DATASOURCE_USERNAME: "postgres"
             SPRING_DATASOURCE_PASSWORD: "postgres"
             SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
@@ -226,7 +200,7 @@ jobs:
           kind: Deployment
           metadata:
             name: backend
-            namespace: hobbies-app
+            namespace: holidays-app
           spec:
             replicas: 1
             selector:
@@ -245,20 +219,20 @@ jobs:
                       - containerPort: 8080
                     envFrom:
                       - configMapRef:
-                          name: backend-config
+                        name: backend-config
                       - secretRef:
-                          name: hobbies-secret
-                          optional: false
+                        name: hobbies-secret
+                        optional: false
           ---
           apiVersion: v1
           kind: Service
           metadata:
             name: backend
-            namespace: hobbies-app
+            namespace: holidays-app
           spec:
             ports:
               - port: 8080
-              targetPort: 8080
+            targetPort: 8080
             selector:
               app: backend
             clusterIP: None
@@ -288,9 +262,8 @@ jobs:
                     ports:
                       - containerPort: 80
                     env:
-                      # Adjust variable name based on what you use in React (VITE_ or REACT_APP_)
                       - name: VITE_API_URL
-                        value: "http://backend.hobbies-app.svc.cluster.local:8080"
+                        value: "http://backend.holidays-app.svc.cluster.local:8080"
           ---
           apiVersion: v1
           kind: Service
@@ -300,7 +273,7 @@ jobs:
           spec:
             ports:
               - port: 80
-              targetPort: 80
+            targetPort: 80
             selector:
               app: frontend
             clusterIP: None
@@ -311,13 +284,13 @@ jobs:
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
-            name: holidays-ingress
+            name: hobbies-ingress
             namespace: holidays-app
           annotations:
-            nginx.ingress.kubernetes.io/rewrite-target: /
+              nginx.ingress.kubernetes.io/rewrite-target: /
           spec:
             rules:
-              - host: holidays.local
+              - host: hobbies.local
                 http:
                   paths:
                     - path: /api
@@ -330,10 +303,10 @@ jobs:
                     - path: /
                       pathType: Prefix
                       backend:
-                        service:
-                          name: frontend
-                          port:
-                            number: 80
+                          service:
+                            name: frontend
+                            port:
+                              number: 80
           EOF
 
       - name: Install Minikube & Kubectl
@@ -352,9 +325,9 @@ jobs:
 
       - name: Start Minikube
         run: |
-          # FIX: Use 'docker' driver (default) to fix GUEST_MISSING_CONNTRACK
-          # FIX: Use sudo to allow it to talk to Docker socket
-          sudo minikube start --driver=docker
+          # Use driver=docker (standard for GitHub Actions runner)
+          # FIX: Removed '--wait' flag causing previous crash
+          minikube start --driver=docker
           
           # Enable Ingress for clean URLs
           minikube addons enable ingress
@@ -372,6 +345,7 @@ jobs:
           echo "------------------------------------------"
           echo "Deployment Complete!"
           echo "Minikube is running."
-          echo "To access your application, run this command in your terminal:"
+          echo "Run this command in your terminal:"
           echo "  minikube tunnel"
+          echo "Or check minikube IP: minikube ip"
           echo "------------------------------------------"
