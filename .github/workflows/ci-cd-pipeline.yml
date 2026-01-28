@@ -74,6 +74,12 @@ jobs:
           java-version: '11'
           cache: 'maven'
 
+      - name:
+        Debug: Check Compiled Classes
+        run: |
+          echo "Checking if compiled classes exist..."
+          ls -R ./spring-backend/target/classes || echo "Classes directory is MISSING or EMPTY"
+
       - name: Build & test (Maven) - generate JaCoCo XML
         working-directory: ./spring-backend
         # Force H2 for CI
@@ -82,15 +88,15 @@ jobs:
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarcloud-github-action@master
         env:
-          # FIXED TYPO: Corrected env variable names
+          # Fixed Typos
           GITHUB_TOKEN: ${{ secrets.HUBGIT_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
+          # Explicit Properties to fix "Binary paths empty" error
           args: >
             -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
-            # CRITICAL FIX: Added all explicit properties to solve "contains .java files" error
             -Dsonar.sources=spring-backend/src/main/java,react-frontend/src
             -Dsonar.tests=spring-backend/src/test/java
             -Dsonar.java.binaries=spring-backend/target/classes
@@ -110,7 +116,6 @@ jobs:
 
       - name: Create K8s Directory and Manifests
         run: |
-          # Create the k8s folder if it doesn't exist
           mkdir -p k8s
           
           # Create 00-namespace.yaml
@@ -198,7 +203,7 @@ jobs:
 
           # Create 03-backend.yaml
           cat <<EOF > k8s/03-backend.yaml
-          apiVersion: v1
+          apiVersion: apps/v1
           kind: ConfigMap
           metadata:
             name: backend-config
@@ -275,6 +280,7 @@ jobs:
                     ports:
                       - containerPort: 80
                     env:
+                      # Adjust to match your React env var name
                       - name: VITE_API_URL
                         value: "http://backend.hobbies-app.svc.cluster.local:8080"
           ---
@@ -299,8 +305,8 @@ jobs:
           metadata:
             name: hobbies-ingress
             namespace: hobbies-app
-            annotations:
-              nginx.ingress.kubernetes.io/rewrite-target: /
+          annotations:
+            nginx.ingress.kubernetes.io/rewrite-target: /
           spec:
             rules:
               - host: hobbies.local
@@ -309,17 +315,18 @@ jobs:
                     - path: /api
                       pathType: Prefix
                       backend:
-                          service:
-                            name: backend
+                        service:
+                          name: backend
                             port:
                               number: 8080
                     - path: /
                       pathType: Prefix
                       backend:
-                          service:
-                            name: frontend
+                        service:
+                          name: frontend
                             port:
                               number: 80
+          EOF
 
       - name: Install Minikube & Kubectl
         run: |
@@ -331,22 +338,25 @@ jobs:
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
+          
+          # Add user to docker group to fix permissions
+          sudo usermod -aG docker $USER
 
       - name: Start Minikube
         run: |
-          # FIX: Use 'none' driver to avoid sudo permission errors
-          # FIX: Use --wait to ensure cluster is ready before deploy
-          minikube start --driver=none --wait
+          # FIX: Removed '--wait' flag to fix "flag needs an argument" error
+          # FIX: Using 'none' driver to avoid sudo issues (runner acts as root enough for this)
+          minikube start --driver=none
           
           # Enable Ingress for clean URLs
           minikube addons enable ingress
 
       - name: Deploy to K8s
         run: |
-          # Wait for nodes to be ready
+          # Wait for nodes to be ready (replaces minikube --wait functionality)
           kubectl wait --for=condition=ready node --timeout=120s
           
-          # Apply all your k8s manifests
+          # Apply manifests
           kubectl apply -f k8s/
 
       - name: Get Access Info
@@ -356,4 +366,5 @@ jobs:
           echo "To access your application, you need to tunnel into Minikube."
           echo "Run this command in your terminal:"
           echo "  minikube tunnel"
+          echo "Or check minikube IP: minikube ip"
           echo "------------------------------------------"
