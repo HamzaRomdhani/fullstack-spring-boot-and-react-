@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline (Artifact-Persisted)
 
 on:
   push:
@@ -20,17 +20,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          distribution: temurin
+          java-version: '11'
+          cache: 'maven'
+
+      # Build & Generate Coverage
+      # We use 'verify' to generate JaCoCo XML. We rely on H2 profile defined in properties.
+      # We DO NOT use 'clean' here, we want to keep the folder for artifact upload.
+      - name: Build & Test (Maven) - Generate JaCoCo XML
+        working-directory: ./spring-backend
+        run: mvn -B verify -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+
+      # CRITICAL STEP: Persist Maven Target Folder
+      # We zip and upload the target folder so the next job can access it.
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: maven-target
+          path: spring-backend/target
+          retention-days: 1
 
       # --- Backend Build ---
       - name: Build and push Backend
@@ -65,7 +76,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Important for Sonar history
+          fetch-depth: 0
+
+      - name: Download Build Artifacts
+        # Restore the target folder from the previous job
+        uses: actions/download-artifact@v4
+        with:
+          name: maven-target
+          path: spring-backend/target
 
       - name: Set up JDK 11
         uses: actions/setup-java@v4
@@ -74,29 +92,18 @@ jobs:
           java-version: '11'
           cache: 'maven'
 
-      - name:
-        Debug: Check Compiled Classes
-        run: |
-          echo "Checking if compiled classes exist..."
-          ls -R ./spring-backend/target/classes || echo "Classes directory is MISSING or EMPTY"
-
-      - name: Build & test (Maven) - generate JaCoCo XML
-        working-directory: ./spring-backend
-        # Force H2 for CI
-        run: mvn -B clean verify -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
-
+      # Run Sonar Scan on the downloaded artifacts
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarcloud-github-action@master
         env:
-          # Fixed Typos
           GITHUB_TOKEN: ${{ secrets.HUBGIT_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          # Explicit Properties to fix "Binary paths empty" error
           args: >
             -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
+            # Explicit properties to ensure analysis works
             -Dsonar.sources=spring-backend/src/main/java,react-frontend/src
             -Dsonar.tests=spring-backend/src/test/java
             -Dsonar.java.binaries=spring-backend/target/classes
@@ -148,7 +155,7 @@ jobs:
           kind: StatefulSet
           metadata:
             name: db
-            namespace: hobbies-app
+            namespace: actions-app
           spec:
             serviceName: db
             replicas: 1
@@ -280,7 +287,6 @@ jobs:
                     ports:
                       - containerPort: 80
                     env:
-                      # Adjust to match your React env var name
                       - name: VITE_API_URL
                         value: "http://backend.hobbies-app.svc.cluster.local:8080"
           ---
@@ -315,45 +321,39 @@ jobs:
                     - path: /api
                       pathType: Prefix
                       backend:
-                        service:
-                          name: backend
+                          service:
+                            name: backend
                             port:
                               number: 8080
                     - path: /
                       pathType: Prefix
                       backend:
-                        service:
-                          name: frontend
+                          service:
+                            name: frontend
                             port:
                               number: 80
           EOF
 
       - name: Install Minikube & Kubectl
         run: |
-          # Download Minikube
           curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
           sudo install minikube-linux-amd64 /usr/local/bin/minikube
-          
-          # Download Kubectl
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
-          
-          # Add user to docker group to fix permissions
           sudo usermod -aG docker $USER
 
       - name: Start Minikube
         run: |
-          # FIX: Removed '--wait' flag to fix "flag needs an argument" error
-          # FIX: Using 'none' driver to avoid sudo issues (runner acts as root enough for this)
+          # Use driver=none for GitHub Actions
           minikube start --driver=none
           
-          # Enable Ingress for clean URLs
+          # Enable Ingress
           minikube addons enable ingress
 
       - name: Deploy to K8s
         run: |
-          # Wait for nodes to be ready (replaces minikube --wait functionality)
+          # Wait for nodes to be ready
           kubectl wait --for=condition=ready node --timeout=120s
           
           # Apply manifests
@@ -363,8 +363,6 @@ jobs:
         run: |
           echo "------------------------------------------"
           echo "Deployment Complete!"
-          echo "To access your application, you need to tunnel into Minikube."
-          echo "Run this command in your terminal:"
+          echo "To access your application, run this command in a new terminal:"
           echo "  minikube tunnel"
-          echo "Or check minikube IP: minikube ip"
           echo "------------------------------------------"
