@@ -1,8 +1,8 @@
-name: SonarCloud Analysis
+name: SonarCloud Analysis + Deploy to Minikube
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main", "master" ]
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Important for Sonar history
 
       - name: Set up JDK 11
         uses: actions/setup-java@v4
@@ -22,10 +22,9 @@ jobs:
           java-version: '11'
           cache: 'maven'
 
-      # Cleaned up command - just Maven
       - name: Build & test (maven) - generate JaCoCo XML
         working-directory: ./spring-backend
-        # We FORCE H2 here so it overrides any Postgres config in application.yml
+        # We force H2 via command line to ensure it works in CI
         run: mvn -B clean verify -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
 
       - name: Analyze with SonarCloud
@@ -38,3 +37,48 @@ jobs:
             -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
+
+  # NEW JOB: Deploy to Minikube
+  deploy-to-minikube:
+    name: Deploy to Minikube
+    runs-on: ubuntu-latest
+    # This ensures this job waits for the Docker build in the OTHER workflow to finish
+    needs: build-and-push
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Minikube & Kubectl
+        run: |
+          # Download Minikube
+          curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          sudo install minikube-linux-amd64 /usr/local/bin/minikube
+
+          # Download Kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Start Minikube
+        run: |
+          # Start Minikube cluster using docker driver
+          sudo minikube start --driver=docker
+          # Enable Ingress for clean URLs
+          minikube addons enable ingress
+
+      - name: Deploy to K8s
+        run: |
+          # Wait for nodes to be ready
+          kubectl wait --for=condition=ready node --timeout=120s
+
+          # Apply all your k8s manifests (assuming you created k8s/ folder)
+          kubectl apply -f k8s/
+
+      - name: Get Access Info
+        run: |
+          echo "------------------------------------------"
+          echo "Deployment Complete!"
+          echo "To access your application, you need to tunnel into Minikube."
+          echo "Run this command in a new terminal:"
+          echo "  minikube tunnel"
+          echo "------------------------------------------"

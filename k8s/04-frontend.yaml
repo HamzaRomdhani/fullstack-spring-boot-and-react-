@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: hobbies-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: hamzaromdhani/hobbie-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          env:
+            # Adjust the variable name based on what you use in React (VITE_ or REACT_APP_)
+            - name: REACT_APP_API_URL
+              value: "http://backend.hobbies-app.svc.cluster.local:8080"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: hobbies-app
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: frontend
+  clusterIP: None
