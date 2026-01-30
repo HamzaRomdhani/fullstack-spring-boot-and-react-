@@ -15,6 +15,7 @@ jobs:
         with:
           fetch-depth: 0
 
+      # --- 1. Setup Java & Backend Tests ---
       - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
@@ -22,12 +23,26 @@ jobs:
           java-version: '11'
           cache: 'maven'
 
-      # Cleaned up command - just Maven
-      - name: Build & test (maven) - generate JaCoCo XML
+      - name: Build & Test Backend (Maven)
         working-directory: ./spring-backend
-        # We FORCE H2 here so it overrides any Postgres config in application.yml
         run: mvn -B clean verify -Dspring.datasource.url="jdbc:h2:mem:testdb;MODE=PostgreSQL" -Dspring.datasource.driver-class-name=org.h2.Driver -Dspring.jpa.database-platform=org.hibernate.dialect.H2Dialect
 
+      # --- 2. Setup Node & Frontend Tests (New!) ---
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # Use the version matching your project
+
+      - name: Install Frontend Dependencies
+        working-directory: ./react-frontend
+        run: npm ci
+
+      - name: Run Frontend Tests & Generate Coverage
+        working-directory: ./react-frontend
+        run: npm run test
+        # This generates react-frontend/coverage/lcov.info
+
+      # --- 3. SonarCloud Analysis (Combined) ---
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarcloud-github-action@master
         env:
@@ -38,3 +53,7 @@ jobs:
             -Dsonar.projectKey=HamzaRomdhani_fullstack-spring-boot-and-react
             -Dsonar.organization=hamzaromdhani
             -Dsonar.host.url=https://sonarcloud.io
+            # Tell Sonar where the Java Coverage is
+            -Dsonar.coverage.jacoco.xmlReportPaths=spring-backend/target/site/jacoco/jacoco.xml
+            # Tell Sonar where the React Coverage is
+            -Dsonar.javascript.lcov.reportPaths=react-frontend/coverage/lcov.info

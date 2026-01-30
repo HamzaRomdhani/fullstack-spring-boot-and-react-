@@ -31,7 +31,7 @@
   "scripts": {
     "start": "PORT=4200 react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test --transformIgnorePatterns 'node_modules/(?!(jest-)?(@ionic/react|@ionic/react-router|@ionic/core|@stencil/core|ionicons|react-confirm-alert)/)'",
+    "test": "react-scripts test --transformIgnorePatterns 'node_modules/(?!(jest-)?(@ionic/react|@ionic/react-router|@ionic/core|@stencil/core|ionicons|react-confirm-alert)/)' --watchAll=false --coverage --coverageReporters=json --coverageReporters=lcov --collectCoverageFrom='src/**/*.{js,jsx}'",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
