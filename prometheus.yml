@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'hobbie-backend'
+    # The path to the actuator endpoint
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      # 'backend' matches the service name in docker-compose.yml
+      # '8080' is the internal port of the backend container
+      - targets: ['backend:8080']

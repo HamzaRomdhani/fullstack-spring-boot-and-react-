@@ -55,6 +55,8 @@ public class SecurityConfiguration extends WebSecurityConfigurerAdapter {
                         "/authenticate",
                         "/notification",
                         "/password",
+                        "/actuator/prometheus",
+                        "/actuator/health",
 
                         "/swagger-ui.html",
                         "/swagger-ui/**",
