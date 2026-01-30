@@ -22,3 +22,19 @@ spec:
                 name: frontend
                 port:
                   number: 80
+           # Swagger UI
+          - path: /swagger-ui
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          # OpenAPI docs
+          - path: /v3/api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
