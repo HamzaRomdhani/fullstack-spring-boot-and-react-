@@ -6,18 +6,24 @@ import UpdatePasswordService from "../../api/login/forgottenPassword/UpdatePassw
 import userEvent from "@testing-library/user-event";
 import mockAxios from "jest-mock-axios";
 
+// FIX 1: Explicitly mock the axios module.
+// This ensures that when UpdatePasswordService imports axios,
+// it receives THIS mock that mockAxios controls.
+jest.mock("axios");
+import axios from "axios";
+
 beforeEach(() =>
-  render(
-    <Router>
-      {" "}
-      <SetUpNewPassword />
-    </Router>
-  )
+    render(
+        <Router>
+          {" "}
+          <SetUpNewPassword />
+        </Router>
+    )
 );
 
 afterEach(() => {
   mockAxios.reset();
-  cleanup;
+  cleanup(); // FIX 2: Added () to actually call the cleanup function
 });
 
 it("input should be initially empty", () => {
@@ -59,15 +65,17 @@ it("should show error message on invalid input", () => {
 it("should update password correctly", async () => {
   const id = "1";
   const password = "n87";
+
+  // Mock the response
   mockAxios.post.mockResolvedValueOnce(id);
 
   const result = await UpdatePasswordService(id, password);
 
   expect(mockAxios.post).toHaveBeenCalledTimes(1);
   expect(mockAxios.post).toHaveBeenCalledWith(
-    `http://localhost:8080/password`,
-    null,
-    { params: { id: "1", password: "n87" } }
+      `http://localhost:8080/password`,
+      null,
+      { params: { id: "1", password: "n87" } }
   );
   expect(result).toEqual("1");
 });

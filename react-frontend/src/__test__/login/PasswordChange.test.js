@@ -56,8 +56,11 @@ it("should send email correctly", async () => {
 
   expect(mockAxios.post).toHaveBeenCalledTimes(1);
   expect(mockAxios.post).toHaveBeenCalledWith(
-    `http://localhost:8080/notification`,
-    email
+      `http://localhost:8080/notification`,
+      null, // Axios params usually go with a null body
+      {
+        params: { email: email } // Match the actual API call structure
+      }
   );
   expect(result).toEqual("n87@gmail.com");
 });
