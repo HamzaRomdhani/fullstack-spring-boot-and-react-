@@ -2,15 +2,16 @@ import { render, cleanup, screen } from "@testing-library/react";
 import SetUpNewPassword from "../../components/root/users/login/forgottenPassword/SetUpNewPassword";
 import React from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
-import UpdatePasswordService from "../../api/login/forgottenPassword/UpdatePasswordService";
 import userEvent from "@testing-library/user-event";
 import mockAxios from "jest-mock-axios";
 
-// FIX 1: Explicitly mock the axios module.
-// This ensures that when UpdatePasswordService imports axios,
-// it receives THIS mock that mockAxios controls.
-jest.mock("axios");
-import axios from "axios";
+// --- CRITICAL FIX ---
+// We tell Jest to mock 'axios' by returning our imported 'mockAxios' object.
+// This ensures your Service and your Test are looking at the same thing.
+jest.mock("axios", () => mockAxios);
+
+// Import the service AFTER the mock is defined (Jest hoisting handles this order)
+import UpdatePasswordService from "../../api/login/forgottenPassword/UpdatePasswordService";
 
 beforeEach(() =>
     render(
@@ -23,7 +24,7 @@ beforeEach(() =>
 
 afterEach(() => {
   mockAxios.reset();
-  cleanup(); // FIX 2: Added () to actually call the cleanup function
+  cleanup(); // Keep the cleanup() fix from before
 });
 
 it("input should be initially empty", () => {
@@ -66,7 +67,6 @@ it("should update password correctly", async () => {
   const id = "1";
   const password = "n87";
 
-  // Mock the response
   mockAxios.post.mockResolvedValueOnce(id);
 
   const result = await UpdatePasswordService(id, password);
